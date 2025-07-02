@@ -46,6 +46,23 @@ def build_faiss_vectorstore(doc_path="docs/doc1.txt", save_path="faiss_index"):
     vectorstore.save_local(save_path)
     print(f"FAISS Index saved to `{save_path}`")
 
+def retrieve_from_faiss(query, index_path="faiss_index"):
+    # Reuse the same embedding model for querying
+    embedding_model = QwenLocalEmbeddings()
+
+    # Load FAISS index
+    vectorstore = FAISS.load_local(index_path, embedding_model, allow_dangerous_deserialization=True)
+
+
+    # Run similarity search
+    results = vectorstore.similarity_search(query, k=3)
+
+    # Print top matches
+    print("\nTop matching chunks:")
+    for i, doc in enumerate(results, 1):
+        print(f"\n[{i}] {doc.page_content.strip()}")
+
 # Run 
 if __name__ == "__main__":
     build_faiss_vectorstore()
+    retrieve_from_faiss("Where does Lucius Wilbert Tjoa work?")
