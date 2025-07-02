@@ -55,14 +55,46 @@ def retrieve_from_faiss(query, index_path="faiss_index"):
 
 
     # Run similarity search
-    results = vectorstore.similarity_search(query, k=3)
+    results = vectorstore.similarity_search(query, k=20)
 
     # Print top matches
     print("\nTop matching chunks:")
     for i, doc in enumerate(results, 1):
         print(f"\n[{i}] {doc.page_content.strip()}")
 
+    generate_answer(query, results)
+
+def generate_answer(query, docs):
+    # Build the prompt: context + query
+    context = "\n\n".join([doc.page_content for doc in docs])
+    prompt = f"""You are a helpful assistant. Use the context below to answer the question.
+
+Context:
+{context}
+
+Question: {query}
+Answer:"""
+
+    # Send to LM Studio's Qwen chat model
+    payload = {
+        "model": "qwen3-0.6b",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    headers = {"Authorization": "Bearer lm-studio"}
+
+    response = requests.post("http://localhost:1234/v1/chat/completions", json=payload, headers=headers)
+    if response.status_code != 200:
+        raise Exception(f"LLM call failed: {response.status_code} - {response.text}")
+
+    answer = response.json()["choices"][0]["message"]["content"]
+    print("\n🤖 AI Answer:")
+    print(answer)
+
+
 # Run 
 if __name__ == "__main__":
     build_faiss_vectorstore()
-    retrieve_from_faiss("Where does Lucius Wilbert Tjoa work?")
+    retrieve_from_faiss(input("Enter your question: ") + "/no_think")
