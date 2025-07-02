@@ -39,7 +39,7 @@ def build_faiss_vectorstore(doc_path="docs/doc1.txt", save_path="faiss_index"):
     vectorstore.save_local(save_path)
 
 # Answer generation using LM Studio (Qwen)
-def generate_answer(query, docs):
+async def generate_answer_stream(query, docs, msg: cl.Message):
     context = "\n\n".join([doc.page_content for doc in docs])
     prompt = f"""You are a helpful assistant. Use the context below to answer the question. /no_think
 
@@ -68,7 +68,13 @@ Answer:"""
     answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL)
     answer = re.sub(r'<think>', '', answer)
 
-    return answer
+    # Simulate streaming: send chunk-by-chunk
+    for chunk in answer.split(". "):  # You can also split by \n if you prefer
+        await msg.stream_token(chunk.strip() + ". ")
+        await cl.sleep(0.05)  # Small delay for smoother streaming
+
+    await msg.send()  # Finalize the message box
+
 
 # Run on user input
 @cl.on_message
@@ -84,5 +90,6 @@ async def main(message: cl.Message):
     #     await cl.Message(content=f"**[{i}]** {doc.page_content.strip()}").send()
 
     # Generate and show answer
-    answer = generate_answer(query, results)
-    await cl.Message(content=f"🤖 **AI Answer:**\n{answer}").send()
+    msg = cl.Message("")
+    await msg.send()  # Show empty message container first
+    await generate_answer_stream(query, results, msg)
