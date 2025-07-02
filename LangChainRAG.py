@@ -51,11 +51,11 @@ def retrieve_from_faiss(query, index_path="faiss_index"):
     embedding_model = QwenLocalEmbeddings()
 
     # Load FAISS index
-    vectorstore = FAISS.load_local(index_path, embedding_model, allow_dangerous_deserialization=True)
+    vectorstore = FAISS.load_local(index_path, embedding_modQwel, allow_dangerous_deserialization=True)
 
 
     # Run similarity search
-    results = vectorstore.similarity_search(query, k=20)
+    results = vectorstore.similarity_search(query, k=5)
 
     # Print top matches
     print("\nTop matching chunks:")
