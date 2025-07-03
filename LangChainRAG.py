@@ -7,6 +7,17 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_core.embeddings import Embeddings
 
+
+import google.generativeai as genai
+import pathlib
+
+from dotenv import load_dotenv
+load_dotenv()
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))  # Replace with your actual key
+
+
+
 # Custom embedding class for LM Studio's Qwen
 class QwenLocalEmbeddings(Embeddings):
     def __init__(self, model="text-embedding-qwen3-embedding-0.6b", base_url="http://127.0.0.1:1234/v1"):
@@ -37,6 +48,28 @@ def build_faiss_vectorstore(doc_path="docs/doc1.txt", save_path="faiss_index"):
     embedding_model = QwenLocalEmbeddings()
     vectorstore = FAISS.from_texts(texts, embedding_model)
     vectorstore.save_local(save_path)
+
+def extract_text_from_pdf_to_file(pdf_file_path: str, output_file_path: str = "docs/doc1.txt") -> str:
+    pdf_bytes = pathlib.Path(pdf_file_path).read_bytes()
+
+    model = genai.GenerativeModel("models/gemini-1.5-flash")  # or 2.5-flash
+    response = model.generate_content([
+        {
+            "inline_data": {
+                "mime_type": "application/pdf",
+                "data": pdf_bytes
+            }
+        },
+        {
+            "text": "Give me the plain text of the document in detailed format and do not miss any information at all. You can give me in the full and understandable form"
+        }
+    ])
+
+    with open(output_file_path, "w", encoding="utf-8") as f:
+        f.write(response.text)
+
+    return response.text
+
 
 # Answer generation using LM Studio (Qwen)
 async def generate_answer_stream(query, docs, msg: cl.Message):
@@ -75,21 +108,42 @@ Answer:"""
 
     await msg.send()  # Finalize the message box
 
+@cl.on_chat_start
+def on_chat_start():
+    cl.user_session.set("counter", 0)
 
 # Run on user input
 @cl.on_message
 async def main(message: cl.Message):
+    counter = cl.user_session.get("counter", 0)
+    counter += 1
+    cl.user_session.set("counter", counter)
+
+    # If the user uploaded a file (no prompt)
+    if message.elements:
+        for element in message.elements:
+            if isinstance(element, cl.File) and element.name.endswith(".pdf"):
+                file_path = element.path
+                await cl.Message(content=f"File received: {element.name}. Processing...").send()
+
+                # Gemini extracts to doc1.txt
+                extract_text_from_pdf_to_file(file_path)
+
+                # Rebuild FAISS index
+                build_faiss_vectorstore()
+
+                await cl.Message(content="Document processed. You can now ask questions.").send()
+                return
+
+    # If it's a normal query
     query = message.content.strip()
+
+    # Load vector store and search
     embedding_model = QwenLocalEmbeddings()
     vectorstore = FAISS.load_local("faiss_index", embedding_model, allow_dangerous_deserialization=True)
     results = vectorstore.similarity_search(query, k=5)
 
-    # Show retrieved chunks
-    # await cl.Message(content="🔎 Top matching chunks:").send()
-    # for i, doc in enumerate(results, 1):
-    #     await cl.Message(content=f"**[{i}]** {doc.page_content.strip()}").send()
-
-    # Generate and show answer
+    # Generate streaming answer
     msg = cl.Message("")
-    await msg.send()  # Show empty message container first
+    await msg.send()
     await generate_answer_stream(query, results, msg)
